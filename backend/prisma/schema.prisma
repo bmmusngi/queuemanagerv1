@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// ENUMS
+// -----------------------------------------------------------------------------
+
+enum CourtStatus {
+  ACTIVE
+  INACTIVE // For courts booked or reserved for a later time during the session
+}
+
+// -----------------------------------------------------------------------------
+// MODELS
+// -----------------------------------------------------------------------------
+
+model Sport {
+  id             String          @id @default(uuid())
+  name           String          @unique // e.g., "Badminton", "Tennis", "Pickleball"
+  
+  isActive       Boolean
+  // A sport can have multiple queueing groups
+  queueingGroups QueueingGroup[]
+  
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model QueueingGroup {
+  id          String    @id @default(uuid())
+  name        String    // e.g., "Tuesday Smashers"
+  
+  sportId     String
+  sport       Sport     @relation(fields: [sportId], references: [id])
+  
+  // Registered members belonging to this specific group
+  members     Member[]  @relation("GroupMembers")
+  
+  // Sessions hosted by this group
+  sessions    Session[]
+  isActive    Boolean?  // to determine whether a queueing group is active or not
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Session {                       //Queueing Session
+  id              String             @id // YYYYMMDDXXXXXX
+  status          String             @default("ACTIVE") // ACTIVE, COMPLETED
+  
+  queueingGroupId String
+  queueingGroup   QueueingGroup      @relation(fields: [queueingGroupId], references: [id])
+  
+  venue           String              //Venue where the session is being held (freetext)
+  // Courts allocated to this specific session
+  courts          Court[]
+  
+  players         Player[]
+  games           Game[]
+  playerStats     PlayerStatistics[]
+  
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+model Court {
+  id        String      @id @default(uuid())
+  name      String      // e.g., "Court 1"
+  status    CourtStatus @default(ACTIVE)
+  
+  sessionId String
+  session   Session     @relation(fields: [sessionId], references: [id])
+  
+  // Games assigned to this court
+  games     Game[]
+  
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+model Member {
+  id             String          @id @default(uuid())
+  name           String
+  levelWeight    Int
+  gender         String
+  isActive       Boolean         @default(true)
+  
+  // A member can be part of multiple queueing groups
+  queueingGroups QueueingGroup[] @relation("GroupMembers")
+  
+  // A member can appear in many sessions as a 'Player'
+  sessionEntries Player[]
+  
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model Player {
+  id            String             @id @default(uuid())
+  
+  sessionId     String
+  session       Session            @relation(fields: [sessionId], references: [id])
+  
+  // Link to Member (Nullable because walk-ins aren't members)
+  memberId      String?
+  member        Member?            @relation(fields: [memberId], references: [id])
+
+  name          String
+  levelWeight   Int
+  gender        String
+  playerStatus  String             @default("MEMBER") // MEMBER, WALKIN
+  playingStatus String             @default("ACTIVE") // ACTIVE, INACTIVE
+  paymentStatus String             @default("UNPAID")
+  paymentMode   String?            // GCash, Cash, QRPH
+  
+  gamesAsTeamA  Game[]             @relation("TeamA")
+  gamesAsTeamB  Game[]             @relation("TeamB")
+  
+  statistics    PlayerStatistics[] 
+  
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+}
+
+model PlayerStatistics {
+  playerId  String
+  player    Player  @relation(fields: [playerId], references: [id])
+  
+  sessionId String
+  session   Session @relation(fields: [sessionId], references: [id])
+  
+  wins      Int     @default(0)
+  losses    Int     @default(0)
+  ties      Int     @default(0)
+
+  // Composite primary key enforcing strict 1:1 relationship between a Player instance and a Session
+  @@id([playerId, sessionId])
+}
+
+model Game {
+  id           String    @id @default(uuid())
+  type         String    // SINGLES, DOUBLES
+  status       String    @default("PENDING") // PENDING, ACTIVE, COMPLETED
+  shuttlesUsed Int       @default(0)
+  winner       String?   // TeamA, TeamB
+  
+  sessionId    String
+  session      Session   @relation(fields: [sessionId], references: [id])
+  
+  courtId      String?
+  court        Court?    @relation(fields: [courtId], references: [id])
+  
+  teamA        Player[]  @relation("TeamA")
+  teamB        Player[]  @relation("TeamB")
+  
+  startedAt    DateTime?
+  endedAt      DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
